@@ -1,0 +1,16 @@
+{
+  "name": "scrapi",
+  "version": "1.0.0",
+  "description": "Extract clean, LLM-ready Markdown from any web page.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.5.0",
+    "express": "^4.19.2",
+    "jsdom": "^24.0.0",
+    "puppeteer": "^22.6.0",
+    "turndown": "^7.1.3"
+  }
+}
