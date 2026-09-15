@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>scrapi | Web-to-Markdown API</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; background: #0f172a; color: #f8fafc; }
+    h1 { margin-bottom: 8px; color: #38bdf8; }
+    p { color: #94a3b8; }
+    .input-group { display: flex; gap: 10px; margin: 24px 0; }
+    input { flex: 1; padding: 12px; border-radius: 6px; border: 1px solid #334155; background: #1e293b; color: #fff; font-size: 16px; }
+    button { padding: 12px 24px; border-radius: 6px; border: none; background: #0284c7; color: #fff; font-weight: bold; cursor: pointer; }
+    button:hover { background: #0369a1; }
+    pre { background: #1e293b; padding: 16px; border-radius: 6px; overflow-x: auto; border: 1px solid #334155; white-space: pre-wrap; word-wrap: break-word; }
+    .meta { background: #1e293b; padding: 12px 16px; border-radius: 6px; margin-bottom: 12px; font-size: 14px; border-left: 4px solid #38bdf8; }
+  </style>
+</head>
+<body>
+  <h1>scrapi</h1>
+  <p>Strip ads, scripts, and navigation. Get clean Markdown for LLM prompts.</p>
+
+  <div class="input-group">
+    <input type="url" id="urlInput" placeholder="https://example.com/article" required />
+    <button onclick="runScraper()">Extract</button>
+  </div>
+
+  <div id="outputContainer" style="display:none;">
+    <div class="meta" id="metaOutput"></div>
+    <pre id="markdownOutput"></pre>
+  </div>
+
+  <script>
+    async function runScraper() {
+      const url = document.getElementById('urlInput').value;
+      const outputContainer = document.getElementById('outputContainer');
+      const metaOutput = document.getElementById('metaOutput');
+      const markdownOutput = document.getElementById('markdownOutput');
+
+      if (!url) return alert('Please enter a valid URL');
+
+      metaOutput.innerText = 'Extracting content...';
+      markdownOutput.innerText = '';
+      outputContainer.style.display = 'block';
+
+      try {
+        const res = await fetch('/api/scrape', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          metaOutput.innerText = 'Error';
+          markdownOutput.innerText = data.details || data.error;
+          return;
+        }
+
+        metaOutput.innerHTML = `<strong>Title:</strong> ${data.title} | <strong>Length:</strong> ${data.length} chars`;
+        markdownOutput.innerText = data.markdown;
+      } catch (err) {
+        metaOutput.innerText = 'Request Failed';
+        markdownOutput.innerText = err.message;
+      }
+    }
+  </script>
+</body>
+</html>
