@@ -11,25 +11,37 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Configure Turndown to generate clean Markdown
 const turndownService = new TurndownService({
   headingStyle: 'atx',
   codeBlockStyle: 'fenced'
 });
 
-// Strip out unneeded elements to save LLM context window tokens
 turndownService.remove(['script', 'style', 'noscript', 'iframe', 'img']);
 
 /**
- * Scrapes target URL using direct parsing first, falling back to Jina Reader.
+ * Normalizes URLs to bypass aggressive bot blocks (e.g., Reddit)
  */
-async function scrapeToMarkdown(targetUrl) {
-  // Strategy 1: Direct HTTP fetch + Readability
+function prepareUrl(url) {
+  let target = url;
+  
+  // Convert standard Reddit URLs to old.reddit.com to bypass network security blocks
+  if (target.includes('reddit.com') && !target.includes('old.reddit.com')) {
+    target = target.replace('www.reddit.com', 'old.reddit.com').replace('reddit.com', 'old.reddit.com');
+  }
+  
+  return target;
+}
+
+async function scrapeToMarkdown(inputUrl) {
+  const targetUrl = prepareUrl(inputUrl);
+
+  // Strategy 1: Direct Fetch via Mobile User-Agent + Readability
   try {
     const response = await axios.get(targetUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9'
       },
       timeout: 10000
     });
@@ -40,7 +52,7 @@ async function scrapeToMarkdown(targetUrl) {
 
     if (article && article.content) {
       const markdown = turndownService.turndown(article.content);
-      if (markdown.trim().length > 100) {
+      if (markdown.trim().length > 100 && !markdown.includes("You've been blocked")) {
         return {
           title: article.title || '',
           byline: article.byline || null,
@@ -52,10 +64,10 @@ async function scrapeToMarkdown(targetUrl) {
       }
     }
   } catch (err) {
-    // Direct fetch failed or blocked; proceed to fallback
+    // Direct fetch failed; fall through to fallback
   }
 
-  // Strategy 2: Fallback to Jina Reader for JS-heavy or protected pages
+  // Strategy 2: Fallback to Jina Reader
   try {
     const fallbackRes = await axios.get(`https://r.jina.ai/${targetUrl}`, {
       headers: { 'Accept': 'application/json' },
@@ -72,7 +84,7 @@ async function scrapeToMarkdown(targetUrl) {
       markdown: data.content
     };
   } catch (fallbackErr) {
-    throw new Error('Failed to extract content from target URL.');
+    throw new Error('Target site blocked automated requests.');
   }
 }
 
