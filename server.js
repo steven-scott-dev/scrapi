@@ -1,6 +1,5 @@
 const express = require('express');
-const puppeteer = require('puppeteer-core');
-const chromium = require('@sparticuz/chromium');
+const axios = require('axios');
 const { JSDOM } = require('jsdom');
 const { Readability } = require('@mozilla/readability');
 const TurndownService = require('turndown');
@@ -20,50 +19,55 @@ const turndownService = new TurndownService({
 turndownService.remove(['script', 'style', 'noscript', 'iframe', 'img']);
 
 async function scrapeToMarkdown(targetUrl) {
-  let browser;
+  // Strategy 1: Direct Fetch + Readability
   try {
-    // Configure executable path for Vercel/Serverless envs vs local
-    const executablePath = await chromium.executablePath();
-
-    browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: executablePath,
-      headless: chromium.headless,
+    const response = await axios.get(targetUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      },
+      timeout: 10000
     });
 
-    const page = await browser.newPage();
-    
-    await page.setUserAgent(
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-    );
-
-    await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
-
-    const html = await page.content();
-    await browser.close();
-
-    const dom = new JSDOM(html, { url: targetUrl });
+    const dom = new JSDOM(response.data, { url: targetUrl });
     const reader = new Readability(dom.window.document);
     const article = reader.parse();
 
-    if (!article || !article.content) {
-      throw new Error('Failed to extract readable content from target URL.');
+    if (article && article.content) {
+      const markdown = turndownService.turndown(article.content);
+      if (markdown.trim().length > 100) {
+        return {
+          title: article.title || '',
+          byline: article.byline || null,
+          excerpt: article.excerpt || '',
+          siteName: article.siteName || '',
+          length: markdown.length,
+          markdown: markdown
+        };
+      }
     }
+  } catch (err) {
+    // Direct fetch failed or blocked; proceed to fallback
+  }
 
-    const markdown = turndownService.turndown(article.content);
+  // Strategy 2: Fallback to Jina Reader for JS-heavy or anti-bot protected sites
+  try {
+    const fallbackRes = await axios.get(`https://r.jina.ai/${targetUrl}`, {
+      headers: { 'Accept': 'application/json' },
+      timeout: 15000
+    });
 
+    const data = fallbackRes.data.data;
     return {
-      title: article.title || '',
-      byline: article.byline || null,
-      excerpt: article.excerpt || '',
-      siteName: article.siteName || '',
-      length: markdown.length,
-      markdown: markdown
+      title: data.title || '',
+      byline: null,
+      excerpt: data.description || '',
+      siteName: '',
+      length: data.content.length,
+      markdown: data.content
     };
-  } catch (error) {
-    if (browser) await browser.close();
-    throw error;
+  } catch (fallbackErr) {
+    throw new Error('Failed to extract content from URL.');
   }
 }
 
@@ -86,5 +90,5 @@ app.post('/api/scrape', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Web-to-Markdown API listening on port ${PORT}`);
+  console.log(`scrapi listening on port ${PORT}`);
 });
