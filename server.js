@@ -11,15 +11,20 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Configure Turndown to generate clean Markdown
 const turndownService = new TurndownService({
   headingStyle: 'atx',
   codeBlockStyle: 'fenced'
 });
 
+// Strip out unneeded elements to save LLM context window tokens
 turndownService.remove(['script', 'style', 'noscript', 'iframe', 'img']);
 
+/**
+ * Scrapes target URL using direct parsing first, falling back to Jina Reader.
+ */
 async function scrapeToMarkdown(targetUrl) {
-  // Strategy 1: Direct Fetch + Readability
+  // Strategy 1: Direct HTTP fetch + Readability
   try {
     const response = await axios.get(targetUrl, {
       headers: {
@@ -50,7 +55,7 @@ async function scrapeToMarkdown(targetUrl) {
     // Direct fetch failed or blocked; proceed to fallback
   }
 
-  // Strategy 2: Fallback to Jina Reader for JS-heavy or anti-bot protected sites
+  // Strategy 2: Fallback to Jina Reader for JS-heavy or protected pages
   try {
     const fallbackRes = await axios.get(`https://r.jina.ai/${targetUrl}`, {
       headers: { 'Accept': 'application/json' },
@@ -67,7 +72,7 @@ async function scrapeToMarkdown(targetUrl) {
       markdown: data.content
     };
   } catch (fallbackErr) {
-    throw new Error('Failed to extract content from URL.');
+    throw new Error('Failed to extract content from target URL.');
   }
 }
 
